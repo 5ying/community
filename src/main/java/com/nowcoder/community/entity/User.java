@@ -101,6 +101,4 @@ public class User {
         this.createTime = createTime;
     }
 
-
-
 }
