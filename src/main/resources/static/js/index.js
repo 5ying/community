@@ -5,6 +5,13 @@ $(function(){
 function publish() {
 	$("#publishModal").modal("hide");
 
+	//发送AJAX请求之前，将CSRF令牌设置到请求头中
+	// var token = $("meta[name='_csrf']").attr("content");
+	// var header = $("meta[name='_csrf_header']").attr("content");
+	// $(document).ajaxSend(function (e,xhr,optins) {
+	// 	xhr.setRequestHeader(header,token);
+	// });
+
 	// 获取标题内容
 	var titlt = $("#recipient-name").val();
 	var conten = $("#message-text").val();
@@ -29,7 +36,7 @@ function publish() {
 					$("#hintModal").modal("hide");
 				//	刷新页面
 					if (data.code == 0 ){
-						window.location.reload();
+						// window.location.reload();
 					}
 				}, 2000);
 

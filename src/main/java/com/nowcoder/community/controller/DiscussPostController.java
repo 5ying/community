@@ -5,17 +5,22 @@ package com.nowcoder.community.controller;/*
  *描述:
  */
 
+import com.nowcoder.community.Event.EventProducer;
 import com.nowcoder.community.entity.Comment;
 import com.nowcoder.community.entity.DiscussPost;
+import com.nowcoder.community.entity.Event;
 import com.nowcoder.community.entity.Page;
 import com.nowcoder.community.entity.User;
 import com.nowcoder.community.service.CommentService;
 import com.nowcoder.community.service.DiscussPostService;
+import com.nowcoder.community.service.LikeService;
 import com.nowcoder.community.service.UserService;
 import com.nowcoder.community.util.CommunityConstant;
 import com.nowcoder.community.util.CommunityUtil;
 import com.nowcoder.community.util.HostHolder;
+import com.nowcoder.community.util.RedisKeyUtil;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,6 +48,14 @@ public class DiscussPostController implements CommunityConstant {
     @Autowired
     CommentService commentService;
 
+    @Autowired
+    private LikeService likeService;
+    @Autowired
+    private RedisTemplate redisTemplate;
+
+    @Autowired
+    EventProducer eventProducer;
+
     @RequestMapping(path = "/add",method = RequestMethod.POST)
     @ResponseBody
     public String addDiscussPost(String title,String content){
@@ -56,9 +69,24 @@ public class DiscussPostController implements CommunityConstant {
         post.setTitle(title);
         post.setContent(content);
         post.setCreateTime(new Date());
+        discussPostService.addDiscussPost(post);
+//        int cnd = discussPostService.addDiscussPost(post);
+//        System.out.println(cnd);
 
-        int cnd = discussPostService.addDiscussPost(post);
-        System.out.println(cnd);
+//        触发发帖事件
+        Event event = new Event()
+                .setTopic(TOPIC_PUBLISH)
+                .setUserId(user.getId())
+                .setEntityType(ENTITY_TYPE_POST)
+                .setEntityId(post.getId());
+
+        eventProducer.fireEvent(event);
+
+//        计算帖子分数
+        // 计算帖子分数
+        String redisKey = RedisKeyUtil.getPostScoreKey();
+        redisTemplate.opsForSet().add(redisKey, post.getId());
+
 
 //        报错的情况，将来统一处理
         return CommunityUtil.getJSONString(0,"发布成功!");
@@ -73,7 +101,12 @@ public class DiscussPostController implements CommunityConstant {
 //作者
         User user = userService.findUserId(post.getUserId());
         model.addAttribute("user",user);
-
+//点赞
+        long likeCount  = likeService.findEntityLikeCount(ENTITY_TYPE_POST,discussPostId);
+        model.addAttribute("likeCount",likeCount);
+//       当前用户的点赞状态
+        int likeStatus =hostHolder.getUser()==null?0: likeService.findEntityLikeStatus(hostHolder.getUser().getId(),ENTITY_TYPE_POST,discussPostId);
+        model.addAttribute("likeStatus",likeStatus);
 //    评论的分页信息
         page.setLimit(5);
         page.setPath("/discuss/detail/"+discussPostId);
@@ -92,6 +125,13 @@ public class DiscussPostController implements CommunityConstant {
              commentVo.put("comment", comment);
              commentVo.put("user", userService.findUserId(comment.getUserId()));
 
+             //点赞
+             likeCount  = likeService.findEntityLikeCount(ENTITY_TYPE_COMMENT,comment.getId());
+            commentVo.put("likeCount",likeCount);
+//       当前用户的点赞状态
+              likeStatus =hostHolder.getUser()==null?0: likeService.findEntityLikeStatus(hostHolder.getUser().getId(),ENTITY_TYPE_COMMENT,comment.getId());
+             commentVo.put("likeStatus",likeStatus);
+
 //             回复列表
              List<Comment> replyList = commentService.findCommentsByEntity(ENTITY_TYPE_COMMENT, comment.getId(), 0, Integer.MAX_VALUE);
 //             回复的Vo列表
@@ -102,6 +142,15 @@ public class DiscussPostController implements CommunityConstant {
                      Map<String, Object> replyVo = new HashMap<>();
                      replyVo.put("reply", reply);
                      replyVo.put("user", userService.findUserId(reply.getUserId()));
+
+                     //点赞
+                     likeCount  = likeService.findEntityLikeCount(ENTITY_TYPE_COMMENT,reply.getId());
+                     replyVo.put("likeCount",likeCount);
+//       当前用户的点赞状态
+                     likeStatus =hostHolder.getUser()==null?0: likeService.findEntityLikeStatus(hostHolder.getUser().getId(),ENTITY_TYPE_COMMENT,reply.getId());
+                     replyVo.put("likeStatus",likeStatus);
+
+
 //                     回复的目标
                      System.out.println(reply.getTargetId());
                      User target = reply.getTargetId() == 0 ? null : userService.findUserId(reply.getTargetId());
@@ -125,5 +174,59 @@ public class DiscussPostController implements CommunityConstant {
      return "/site/discuss-detail";
     }
 
+    // 置顶
+    @RequestMapping(path = "/top", method = RequestMethod.POST)
+    @ResponseBody
+    public String setTop(int id) {
+        discussPostService.updateType(id, 1);
+
+        // 触发发帖事件
+        Event event = new Event()
+                .setTopic(TOPIC_PUBLISH)
+                .setUserId(hostHolder.getUser().getId())
+                .setEntityType(ENTITY_TYPE_POST)
+                .setEntityId(id);
+        eventProducer.fireEvent(event);
+
+        return CommunityUtil.getJSONString(0);
+    }
+
+    // 加精
+    @RequestMapping(path = "/wonderful", method = RequestMethod.POST)
+    @ResponseBody
+    public String setWonderful(int id) {
+        discussPostService.updateStatus(id, 1);
+
+        // 触发发帖事件
+        Event event = new Event()
+                .setTopic(TOPIC_PUBLISH)
+                .setUserId(hostHolder.getUser().getId())
+                .setEntityType(ENTITY_TYPE_POST)
+                .setEntityId(id);
+        eventProducer.fireEvent(event);
+
+        // 计算帖子分数
+        String redisKey = RedisKeyUtil.getPostScoreKey();
+        redisTemplate.opsForSet().add(redisKey, id);
+
+        return CommunityUtil.getJSONString(0);
+    }
+
+    // 删除
+    @RequestMapping(path = "/delete", method = RequestMethod.POST)
+    @ResponseBody
+    public String setDelete(int id) {
+        discussPostService.updateStatus(id, 2);
+
+        // 触发删帖事件
+        Event event = new Event()
+                .setTopic(TOPIC_DELETE)
+                .setUserId(hostHolder.getUser().getId())
+                .setEntityType(ENTITY_TYPE_POST)
+                .setEntityId(id);
+        eventProducer.fireEvent(event);
+
+        return CommunityUtil.getJSONString(0);
+    }
 
 }

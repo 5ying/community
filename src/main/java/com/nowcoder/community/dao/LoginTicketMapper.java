@@ -14,6 +14,11 @@ import org.apache.ibatis.annotations.Update;
 
 
 @Mapper
+@Deprecated
+/*
+这个组件不推荐使用
+本组件是采用MySQL数据库的方式存储登录凭证，后期优化为Redsi存储
+ */
 public interface LoginTicketMapper {
 //    int insertLoginTicket(LoginTicket loginTicket);
 //

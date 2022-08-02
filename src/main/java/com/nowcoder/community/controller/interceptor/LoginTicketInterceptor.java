@@ -12,6 +12,11 @@ import com.nowcoder.community.service.UserService;
 import com.nowcoder.community.util.CookieUtil;
 import com.nowcoder.community.util.HostHolder;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.neo4j.Neo4jProperties;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.context.SecurityContextImpl;
 import org.springframework.stereotype.Component;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -20,6 +25,7 @@ import org.springframework.web.servlet.ModelAndView;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.lang.reflect.Method;
+import java.net.Authenticator;
 import java.util.Date;
 
 @Component
@@ -44,6 +50,11 @@ public class LoginTicketInterceptor implements HandlerInterceptor {
 //                System.out.println(user.toString());
 //                在本次请求中持有的用户
                 hostHolder.setUser(user);
+
+//                构建 用户认证的结果，并存入SecurityContext,以便于Security授权
+                Authentication authentication = new UsernamePasswordAuthenticationToken(
+                        user,user.getPassword(),userService.getAuthorities(user.getId()));
+                SecurityContextHolder.setContext(new SecurityContextImpl(authentication));
             }
         }
 
@@ -72,5 +83,10 @@ public class LoginTicketInterceptor implements HandlerInterceptor {
     @Override
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
         hostHolder.clear();
+//        之前这句话没有注释掉，出现了逻辑之外的错误：比如 用户明明在登陆状态，但是在页面跳转的时候，security认为用户退出登陆了，
+//        又跳转到登陆页面，重新登陆
+//        但实际上用户没有退出登陆，是这句代码将用户的信息清理掉了，然后security就认为用户没有权限了（这里的没有权限是指默认用户没有登陆）
+//        总而言之，注释掉就好啦
+//        SecurityContextHolder.clearContext();
     }
 }
